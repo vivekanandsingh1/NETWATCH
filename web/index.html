@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetWatch · Live Attack Map</title>
+<meta name="description" content="Live map of unsolicited traffic and SSH login attempts hitting a real server.">
+<style>
+:root {
+  --bg: #060a14;
+  --panel: #0d1428;
+  --line: #1c2742;
+  --land: #13213d;
+  --border: #1f3157;
+  --text: #cbd5e1;
+  --muted: #64748b;
+  --cyan: #22d3ee;
+  --pink: #f472b6;
+  --violet: #a78bfa;
+  --yellow: #facc15;
+  --red: #f87171;
+  --green: #4ade80;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font: 13px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; min-height: 100vh; }
+a { color: var(--cyan); }
+
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 14px; }
+.logo { color: var(--cyan); font-weight: 700; letter-spacing: .18em; }
+.live { color: var(--green); font-size: 12px; }
+.live::before { content: "●"; margin-right: 6px; animation: blink 1.2s infinite; }
+.live.off { color: var(--red); }
+.live.off::before { animation: none; }
+@keyframes blink { 50% { opacity: .2; } }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 26px; margin-left: auto; }
+.stat span { display: block; color: var(--muted); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+.stat b { font-size: 17px; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow: hidden; min-width: 0; }
+.panel h2 { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 10px; font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .14em; text-transform: uppercase; }
+.map-panel { grid-column: span 3; }
+.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; height: 0; min-height: 100%; }
+.alerts { flex: 1; min-height: 0; overflow-y: auto; }
+.feed { grid-column: span 2; }
+
+.legend { display: flex; gap: 14px; text-transform: none; letter-spacing: 0; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.k-blocked { background: var(--cyan); }
+.k-ssh { background: var(--pink); }
+
+#map { display: block; width: 100%; height: auto; }
+.land { fill: var(--land); stroke: var(--border); stroke-width: .5; }
+.arc { fill: none; stroke-width: 1.6; stroke-linecap: round; }
+.source { opacity: .8; }
+.home { fill: var(--cyan); }
+.pulse { fill: none; stroke: var(--cyan); animation: pulse 2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes pulse { from { transform: scale(1); opacity: 1; } to { transform: scale(5); opacity: 0; } }
+.home-label { fill: var(--cyan); font-size: 12px; }
+
+#spark { display: block; width: 100%; height: 80px; }
+#spark polyline { fill: none; stroke: var(--cyan); stroke-width: 2; vector-effect: non-scaling-stroke; }
+#spark polygon { fill: var(--cyan); opacity: .08; }
+
+ul, ol { list-style: none; margin: 0; padding: 0; }
+.alerts li { border-left: 3px solid var(--yellow); background: #0a1020; padding: 7px 10px; margin-bottom: 7px; border-radius: 0 6px 6px 0; }
+.alerts li.scan { border-color: var(--red); }
+.alerts li small { display: block; color: var(--muted); }
+.alerts li.empty { border-color: var(--green); color: var(--muted); }
+
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+td { padding: 4px 6px; border-bottom: 1px solid #111a30; white-space: nowrap; }
+td:first-child { color: var(--muted); }
+tr.fresh { animation: flash 1.2s; }
+@keyframes flash { from { background: #0e3a4a; } }
+.tag { padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; color: var(--bg); }
+.dim { color: var(--muted); }
+
+.bars li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin-bottom: 9px; }
+.bars .bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--violet), var(--cyan)); }
+.bars b { font-weight: 500; font-variant-numeric: tabular-nums; }
+
+footer { padding: 6px 20px 22px; color: var(--muted); font-size: 11px; }
+
+@media (max-width: 1000px) {
+  .grid { grid-template-columns: 1fr 1fr; }
+  .map-panel, .feed { grid-column: 1 / -1; }
+  .side { grid-column: 1 / -1; height: auto; }
+}
+@media (max-width: 640px) {
+  .top { padding: 12px 16px; }
+  .stats { margin-left: 0; gap: 8px 18px; }
+  .grid { grid-template-columns: 1fr; padding: 12px 16px; }
+  .feed td:nth-child(3) { display: none; }
+  footer { padding: 6px 16px 22px; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">◆ NETWATCH</span>
+    <span class="live" id="live">LIVE</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><span>events</span><b id="s-total">0</b></div>
+    <div class="stat"><span>sources</span><b id="s-sources">0</b></div>
+    <div class="stat"><span>countries</span><b id="s-countries">0</b></div>
+    <div class="stat"><span>ssh attempts</span><b id="s-ssh">0</b></div>
+    <div class="stat"><span>per minute</span><b id="s-rate">0</b></div>
+    <div class="stat"><span>watching for</span><b id="s-uptime">0m</b></div>
+  </div>
+</header>
+
+<main class="grid">
+  <section class="panel map-panel">
+    <h2>
+      <span>Who is knocking on my server</span>
+      <span class="legend"><span><i class="k-blocked"></i>blocked port</span><span><i class="k-ssh"></i>ssh login</span></span>
+    </h2>
+    <svg id="map" viewBox="0 0 960 470" role="img" aria-label="World map with lines from attack sources to the server">
+      <g id="land"></g>
+      <g id="sources"></g>
+      <g id="arcs"></g>
+      <g id="home"></g>
+    </svg>
+  </section>
+
+  <aside class="side">
+    <section class="panel">
+      <h2><span>Traffic · last 60s</span><span id="s-peak"></span></h2>
+      <svg id="spark" viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true"><polygon></polygon><polyline></polyline></svg>
+    </section>
+    <section class="panel alerts">
+      <h2><span>Alerts</span><span id="s-alerts">0</span></h2>
+      <ul id="alerts"><li class="empty">Quiet so far</li></ul>
+    </section>
+  </aside>
+
+  <section class="panel feed">
+    <h2><span>Live feed</span><span>newest first</span></h2>
+    <table><tbody id="feed"></tbody></table>
+  </section>
+
+  <section class="panel">
+    <h2><span>Top countries</span></h2>
+    <ol id="countries" class="bars"></ol>
+  </section>
+
+  <section class="panel">
+    <h2><span>Targeted ports</span></h2>
+    <ol id="ports" class="bars"></ol>
+  </section>
+</main>
+
+<footer>
+  Unsolicited connections and failed SSH logins on a real VPS. Source IPs are masked and normal service traffic is never recorded.
+  <a href="https://db-ip.com" rel="noopener">IP Geolocation by DB-IP</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js" integrity="sha384-Ukv1p/xTma6P4/2bY5KzWBw+ydSpXmhCMtyciIQVDJ1RmOxtCYNMF1uXT9T63H67" crossorigin="anonymous"></script>
+<script src="/app.js"></script>
+</body>
+</html>

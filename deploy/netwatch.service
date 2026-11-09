@@ -1,0 +1,26 @@
+[Unit]
+Description=NetWatch live attack map
+After=network-online.target systemd-journald.service docker.service
+Wants=docker.service
+
+[Service]
+WorkingDirectory=/opt/netwatch
+ExecStart=/opt/netwatch/.venv/bin/python netwatch.py --host 172.17.0.1 --home 48.98,8.18
+DynamicUser=yes
+SupplementaryGroups=systemd-journal
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=200M
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
