@@ -4,7 +4,7 @@ A live dashboard showing who on the internet is knocking on my server: blocked p
 
 **Live demo:** https://netwatch.pubnetwork.in
 
-![NetWatch dashboard](docs/screenshot.png)
+![NetWatch dashboard](docs/screenshot.jpg)
 
 ## Why
 
